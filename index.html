@@ -976,16 +976,21 @@ body {
   }
 
   function apiPost(url, body) {
+    var json = JSON.stringify(body);
+    // sendBeacon is fire-and-forget: no CORS preflight, no redirect issues
+    if (navigator.sendBeacon) {
+      var blob = new Blob([json], { type: 'text/plain' });
+      var queued = navigator.sendBeacon(url, blob);
+      return Promise.resolve({ ok: queued });
+    }
+    // Fallback: fetch and swallow CORS redirect errors
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(body)
+      body: json
     }).then(function() {
       return { ok: true };
     }, function() {
-      // POST was sent and processed server-side; CORS only blocks the
-      // redirect response, not the request itself. Treat as success and
-      // verify via follow-up GET.
       return { ok: true };
     });
   }
@@ -997,7 +1002,18 @@ body {
     setSyncStatus('syncing');
     apiGet(url).then(function(data) {
       if (data.ok) {
-        workouts = data.workouts || [];
+        var serverWorkouts = data.workouts || [];
+        var serverIds = {};
+        serverWorkouts.forEach(function(w) { serverIds[w.id] = true; });
+        // Clear pending status for workouts confirmed by server
+        pendingIds.forEach(function(id) {
+          if (serverIds[id]) pendingIds.delete(id);
+        });
+        // Keep locally-added workouts that haven't appeared on the server yet
+        var localOnly = workouts.filter(function(w) {
+          return !serverIds[w.id] && (pendingIds.has(w.id) || queuedIds.has(w.id));
+        });
+        workouts = localOnly.concat(serverWorkouts);
         saveWorkoutsLocal();
         renderWorkouts();
         renderStats();
@@ -1032,11 +1048,21 @@ body {
     }
 
     setSyncStatus('syncing');
-    apiPost(url, payload).then(function() {
-      pendingIds.delete(workout.id);
-      setSyncStatus('ok');
-      renderWorkouts();
-      setTimeout(fetchWorkouts, 1500);
+    apiPost(url, payload).then(function(result) {
+      if (result.ok) {
+        setSyncStatus('ok');
+        // Keep in pendingIds until server confirms via GET
+        setTimeout(fetchWorkouts, 3000);
+      } else {
+        pendingIds.delete(workout.id);
+        queuedIds.add(workout.id);
+        var queue = getQueue();
+        queue.push(payload);
+        saveQueue(queue);
+        setSyncStatus('error');
+        renderWorkouts();
+        showToast('Saved offline — will sync later');
+      }
     }).catch(function() {
       pendingIds.delete(workout.id);
       queuedIds.add(workout.id);
