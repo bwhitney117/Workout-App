@@ -19,8 +19,62 @@ function getOrCreateSheet() {
   return sheet;
 }
 
+function handleAction(body) {
+  var action = body.action;
+
+  if (action === 'add') {
+    var sheet = getOrCreateSheet();
+    var row = HEADERS.map(function(h) {
+      return body[h] !== undefined ? (typeof body[h] === 'object' ? JSON.stringify(body[h]) : body[h]) : '';
+    });
+    sheet.appendRow(row);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true, action: 'added' }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } else if (action === 'delete') {
+    var sheet = getOrCreateSheet();
+    var data = sheet.getDataRange().getValues();
+    var idCol = data[0].indexOf('id');
+
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][idCol] === body.id) {
+        sheet.deleteRow(i + 1);
+        return ContentService
+          .createTextOutput(JSON.stringify({ ok: true, action: 'deleted' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: 'Workout not found' }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } else {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: 'Unknown action: ' + action }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 function doGet(e) {
   try {
+    var params = e.parameter || {};
+
+    // Handle write operations via GET (bypasses iOS Safari CORS restrictions on POST)
+    if (params.action) {
+      var body;
+      if (params.data) {
+        body = JSON.parse(params.data);
+        body.action = params.action;
+      } else {
+        body = { action: params.action, id: params.id };
+      }
+      return handleAction(body);
+    }
+
+    // Default: return all workouts
     var sheet = getOrCreateSheet();
     var data = sheet.getDataRange().getValues();
     var headers = data[0];
@@ -47,42 +101,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
-    var action = body.action;
-
-    if (action === 'add') {
-      var sheet = getOrCreateSheet();
-      var row = HEADERS.map(function(h) {
-        return body[h] !== undefined ? (typeof body[h] === 'object' ? JSON.stringify(body[h]) : body[h]) : '';
-      });
-      sheet.appendRow(row);
-
-      return ContentService
-        .createTextOutput(JSON.stringify({ ok: true, action: 'added' }))
-        .setMimeType(ContentService.MimeType.JSON);
-
-    } else if (action === 'delete') {
-      var sheet = getOrCreateSheet();
-      var data = sheet.getDataRange().getValues();
-      var idCol = data[0].indexOf('id');
-
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][idCol] === body.id) {
-          sheet.deleteRow(i + 1);
-          return ContentService
-            .createTextOutput(JSON.stringify({ ok: true, action: 'deleted' }))
-            .setMimeType(ContentService.MimeType.JSON);
-        }
-      }
-
-      return ContentService
-        .createTextOutput(JSON.stringify({ ok: false, error: 'Workout not found' }))
-        .setMimeType(ContentService.MimeType.JSON);
-
-    } else {
-      return ContentService
-        .createTextOutput(JSON.stringify({ ok: false, error: 'Unknown action: ' + action }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    return handleAction(body);
   } catch (err) {
     return ContentService
       .createTextOutput(JSON.stringify({ ok: false, error: err.message }))

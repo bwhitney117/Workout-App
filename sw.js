@@ -1,4 +1,4 @@
-var CACHE_NAME = 'training-tracker-v2';
+var CACHE_NAME = 'training-tracker-v3';
 var ASSETS = [
   '/Workout-App/',
   '/Workout-App/index.html',

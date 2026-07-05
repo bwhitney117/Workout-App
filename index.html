@@ -837,7 +837,7 @@ body {
     </div>
     <button class="btn-secondary" id="btnForceRefresh">Force Refresh Data</button>
     <button class="btn-danger" id="btnDisconnect">Disconnect &amp; Reset</button>
-    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text-muted);">v2</div>
+    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text-muted);">v3</div>
   </div>
 </div>
 
@@ -975,24 +975,19 @@ body {
       });
   }
 
-  function apiPost(url, body) {
-    var json = JSON.stringify(body);
-    // sendBeacon is fire-and-forget: no CORS preflight, no redirect issues
-    if (navigator.sendBeacon) {
-      var blob = new Blob([json], { type: 'text/plain' });
-      var queued = navigator.sendBeacon(url, blob);
-      return Promise.resolve({ ok: queued });
+  function apiWrite(url, body) {
+    var action = body.action;
+    var params = 'action=' + encodeURIComponent(action);
+    if (action === 'delete') {
+      params += '&id=' + encodeURIComponent(body.id);
+    } else {
+      params += '&data=' + encodeURIComponent(JSON.stringify(body));
     }
-    // Fallback: fetch and swallow CORS redirect errors
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: json
-    }).then(function() {
-      return { ok: true };
-    }, function() {
-      return { ok: true };
-    });
+    var getUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + params + '&_t=' + Date.now();
+    return fetch(getUrl, { redirect: 'follow' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) { return { ok: data.ok }; })
+      .catch(function() { return { ok: false }; });
   }
 
   // ---- Data Operations ----
@@ -1048,20 +1043,20 @@ body {
     }
 
     setSyncStatus('syncing');
-    apiPost(url, payload).then(function(result) {
+    apiWrite(url, payload).then(function(result) {
+      pendingIds.delete(workout.id);
       if (result.ok) {
         setSyncStatus('ok');
-        // Keep in pendingIds until server confirms via GET
-        setTimeout(fetchWorkouts, 3000);
+        renderWorkouts();
+        setTimeout(fetchWorkouts, 2000);
       } else {
-        pendingIds.delete(workout.id);
         queuedIds.add(workout.id);
         var queue = getQueue();
         queue.push(payload);
         saveQueue(queue);
         setSyncStatus('error');
         renderWorkouts();
-        showToast('Saved offline — will sync later');
+        showToast('Save failed — will retry');
       }
     }).catch(function() {
       pendingIds.delete(workout.id);
@@ -1092,9 +1087,9 @@ body {
     if (!url || !navigator.onLine) return;
 
     setSyncStatus('syncing');
-    apiPost(url, { action: 'delete', id: id }).then(function() {
+    apiWrite(url, { action: 'delete', id: id }).then(function() {
       setSyncStatus('ok');
-      setTimeout(fetchWorkouts, 1500);
+      setTimeout(fetchWorkouts, 2000);
     }).catch(function() {
       setSyncStatus('error');
     });
@@ -1113,7 +1108,7 @@ body {
     var item = queue.shift();
     saveQueue(queue);
 
-    apiPost(url, item).then(function() {
+    apiWrite(url, item).then(function() {
       queuedIds.delete(item.id);
       renderWorkouts();
       if (queue.length > 0) {
