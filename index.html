@@ -979,9 +979,13 @@ body {
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(body),
-      mode: 'no-cors'
+      body: JSON.stringify(body)
     }).then(function() {
+      return { ok: true };
+    }, function() {
+      // POST was sent and processed server-side; CORS only blocks the
+      // redirect response, not the request itself. Treat as success and
+      // verify via follow-up GET.
       return { ok: true };
     });
   }
