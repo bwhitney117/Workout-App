@@ -837,6 +837,7 @@ body {
     </div>
     <button class="btn-secondary" id="btnForceRefresh">Force Refresh Data</button>
     <button class="btn-danger" id="btnDisconnect">Disconnect &amp; Reset</button>
+    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text-muted);">v2</div>
   </div>
 </div>
 
@@ -1521,9 +1522,18 @@ body {
     }
   }, 30000);
 
-  // Service worker registration
+  // Service worker registration with auto-reload on update
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function() {});
+    var refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+    navigator.serviceWorker.register('sw.js').then(function(reg) {
+      reg.update();
+    }).catch(function() {});
   }
 
   // Start
